@@ -1,0 +1,100 @@
+{
+  "organization": "AECOM",
+  "role": "Senior Director Operational AI & Agentic Automation",
+  "output_dir": "./reports",
+  "state_file": "./agent_state.json",
+  "research_cache_file": "./research_cache.jsonl",
+  "research_interval_hours": 24,
+  "report_interval_hours": 168,
+  "lookback_days_for_report": 14,
+  "max_items_per_topic": 8,
+  "urgent_threshold": 80,
+  "sources": {
+    "rss": [
+      "https://feeds.feedburner.com/oreilly/radar",
+      "https://www.technologyreview.com/feed/",
+      "https://www.artificialintelligence-news.com/feed/",
+      "https://www.wsj.com/xml/rss/3_7031.xml",
+      "https://www.mckinsey.com/featured-insights/artificial-intelligence/rss.xml",
+      "https://www.weforum.org/agenda/feed/"
+    ]
+  },
+  "topic_rules": {
+    "AI & Automation": [
+      "ai",
+      "artificial intelligence",
+      "agentic",
+      "automation",
+      "copilot",
+      "llm",
+      "model"
+    ],
+    "AECOM / AEC Industry": [
+      "aecom",
+      "engineering",
+      "construction",
+      "infrastructure",
+      "architecture",
+      "transportation",
+      "water",
+      "energy transition"
+    ],
+    "Operations & Back Office": [
+      "erp",
+      "finance",
+      "procurement",
+      "back office",
+      "workflow",
+      "shared services",
+      "operations"
+    ],
+    "Supply Chain & Customers": [
+      "supply chain",
+      "logistics",
+      "supplier",
+      "commodity",
+      "client",
+      "public sector"
+    ],
+    "Talent & Workforce": [
+      "hiring",
+      "recruitment",
+      "skills",
+      "reskilling",
+      "productivity",
+      "layoff",
+      "labor",
+      "workforce"
+    ],
+    "Leadership & Career Signals": [
+      "leadership",
+      "director",
+      "executive",
+      "governance",
+      "risk",
+      "board",
+      "strategy"
+    ]
+  },
+  "critical_keywords": [
+    "regulation",
+    "ban",
+    "breach",
+    "cyberattack",
+    "lawsuit",
+    "safety incident",
+    "shutdown",
+    "recession",
+    "rate hike",
+    "export control"
+  ],
+  "kpi": {
+    "stocks": [
+      "ACM.US",
+      "MSFT.US",
+      "GOOGL.US",
+      "NVDA.US",
+      "PLTR.US"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+config.json
+agent_state.json
+research_cache.jsonl
+reports/
