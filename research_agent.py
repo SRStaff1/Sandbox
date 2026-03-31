@@ -19,7 +19,11 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+
+from dataclasses import dataclass
+
 from dataclasses import dataclass, field
+=======
 from pathlib import Path
 from typing import Any
 
