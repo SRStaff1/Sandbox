@@ -19,7 +19,11 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+
 from dataclasses import dataclass
+
+from dataclasses import dataclass, field
+=======
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +118,66 @@ DEFAULT_CONFIG = {
         "rate hike",
         "export control",
     ],
+    "relevance_dimensions": {
+        "aec_industry_impact": {
+            "weight": 1.4,
+            "keywords": [
+                "infrastructure",
+                "engineering",
+                "construction",
+                "transportation",
+                "water",
+                "energy",
+                "public sector",
+                "federal funding",
+            ],
+        },
+        "enterprise_autonomization": {
+            "weight": 1.5,
+            "keywords": [
+                "agentic",
+                "automation",
+                "workflow",
+                "erp",
+                "back office",
+                "shared services",
+                "copilot",
+            ],
+        },
+        "delivery_process_impact": {
+            "weight": 1.2,
+            "keywords": [
+                "project delivery",
+                "productivity",
+                "quality",
+                "pm tool",
+                "software delivery",
+                "devops",
+            ],
+        },
+        "talent_and_workforce": {
+            "weight": 1.1,
+            "keywords": [
+                "hiring",
+                "recruitment",
+                "reskilling",
+                "layoff",
+                "labor",
+                "workforce",
+            ],
+        },
+        "leadership_and_risk": {
+            "weight": 1.1,
+            "keywords": [
+                "governance",
+                "compliance",
+                "regulation",
+                "risk",
+                "security",
+                "executive",
+            ],
+        },
+    },
     "kpi": {
         "stocks": ["ACM.US", "MSFT.US", "GOOGL.US", "NVDA.US", "PLTR.US"],
     },
@@ -131,6 +195,24 @@ class Signal:
     topics: list[str]
     relevance_score: int
     urgency_score: int
+    dimension_scores: dict[str, int] = field(default_factory=dict)
+    rationale: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "Signal":
+        return cls(
+            id=raw.get("id", ""),
+            title=raw.get("title", ""),
+            link=raw.get("link", ""),
+            published=raw.get("published", ""),
+            source=raw.get("source", ""),
+            summary=raw.get("summary", ""),
+            topics=raw.get("topics", []) or ["General Technology Signals"],
+            relevance_score=int(raw.get("relevance_score", 0)),
+            urgency_score=int(raw.get("urgency_score", 0)),
+            dimension_scores=raw.get("dimension_scores", {}) or {},
+            rationale=raw.get("rationale", []) or [],
+        )
 
 
 class ResearchAgent:
@@ -215,16 +297,25 @@ class ResearchAgent:
 
         topics: list[str] = []
         score = 0
+        rationale: list[str] = []
         for topic, keywords in self.config["topic_rules"].items():
             hits = sum(1 for kw in keywords if kw.lower() in text)
             if hits:
                 topics.append(topic)
                 score += min(30, hits * 8)
+                rationale.append(f"{topic}: {hits} keyword hit(s)")
+
+        dim_scores = self._dimension_scores(text)
+        score += min(30, sum(dim_scores.values()) // 2)
+        for dim, val in sorted(dim_scores.items(), key=lambda x: x[1], reverse=True):
+            if val > 0:
+                rationale.append(f"{dim} score {val}")
 
         org = self.config["organization"].lower()
         role_terms = [t for t in re.split(r"[^a-zA-Z0-9]+", self.config["role"].lower()) if t]
         if org in text:
             score += 25
+            rationale.append("organization mention")
         score += min(20, sum(1 for t in role_terms if len(t) > 3 and t in text) * 3)
 
         urgency = score
@@ -241,7 +332,19 @@ class ResearchAgent:
             topics=topics or ["General Technology Signals"],
             relevance_score=min(score, 100),
             urgency_score=min(urgency, 100),
+            dimension_scores=dim_scores,
+            rationale=rationale[:6],
         )
+
+    def _dimension_scores(self, text: str) -> dict[str, int]:
+        dims = self.config.get("relevance_dimensions", {})
+        scores: dict[str, int] = {}
+        for dim_name, conf in dims.items():
+            keywords = conf.get("keywords", [])
+            weight = float(conf.get("weight", 1.0))
+            hits = sum(1 for kw in keywords if kw.lower() in text)
+            scores[dim_name] = min(20, int(hits * 5 * weight))
+        return scores
 
     def should_generate_report(self, now: dt.datetime, signals: list[Signal], force_report: bool) -> tuple[bool, str]:
         if force_report:
@@ -269,7 +372,9 @@ class ResearchAgent:
         top_tactical = sorted(all_signals, key=lambda x: x.relevance_score, reverse=True)[:8]
         top_strategic = strategic_candidates(all_signals)[:8]
 
-        kpi_rows = build_kpi_rows(self.config)
+        kpi_rows = build_kpi_rows(self.config, all_signals, now)
+        changed_summary = summarize_change_windows(all_signals, now)
+        recommendations = build_recommendations(top_operational, top_tactical)
 
         content = []
         content.append(f"# {self.config['organization']} Tech Intelligence Report ({report_type.title()})")
@@ -281,31 +386,60 @@ class ResearchAgent:
 
         content.append("## Priority Signals by Timeframe")
         content.append("")
+        content.append("## What changed since last report window")
+        content.append("")
+        content.append(f"- Signals in last 7 days: **{changed_summary['recent']}**")
+        content.append(f"- Signals in prior 7 days: **{changed_summary['previous']}**")
+        content.append(f"- Net change: **{changed_summary['delta']:+}**")
+        content.append("")
         content.append("### Operational (imminent: 0-30 days)")
+        if not top_operational:
+            content.append("- No high-urgency external signals were captured in the current window.")
         for s in top_operational:
-            content.append(f"- **{s.title}** (urgency {s.urgency_score}/100): {s.summary} [{s.link}]({s.link})")
+            content.append(
+                f"- **{s.title}** (urgency {s.urgency_score}/100): {s.summary} [{s.link}]({s.link}) "
+                f"(why: {', '.join(s.rationale[:2]) or 'scored by relevance model'})"
+            )
         content.append("")
         content.append("### Tactical (30-180 days)")
+        if not top_tactical:
+            content.append("- No tactical-priority items were captured in this cycle.")
         for s in top_tactical:
             content.append(f"- **{s.title}** (relevance {s.relevance_score}/100): {s.summary} [{s.link}]({s.link})")
         content.append("")
         content.append("### Strategic (6-24 months)")
+        if not top_strategic:
+            content.append("- No strategic horizon indicators were captured in this cycle.")
         for s in top_strategic:
             content.append(f"- **{s.title}**: {s.summary} [{s.link}]({s.link})")
+        content.append("")
+        content.append("## Recommended decisions this week")
+        content.append("")
+        for rec in recommendations:
+            content.append(f"- **{rec['decision']}** — {rec['reason']} (owner: {rec['owner']}, horizon: {rec['horizon']})")
 
         content.append("")
         content.append("## Topic Summaries")
         content.append("")
 
         max_items = int(self.config["max_items_per_topic"])
-        for topic, items in grouped.items():
-            content.append(f"### {topic}")
-            for s in sorted(items, key=lambda x: (x.relevance_score, x.urgency_score), reverse=True)[:max_items]:
-                content.append(
-                    f"- **{s.title}** — {s.summary}  \\\n  Source: {domain_of(s.source)} | Published: {s.published or 'n/a'} | "
-                    f"Scores: R{s.relevance_score}/U{s.urgency_score} | Link: {s.link}"
-                )
-            content.append("")
+        if not grouped:
+            content.append(
+                "- No qualifying external signals were captured for this interval. "
+                "Consider adding sources or lowering threshold strictness."
+            )
+        else:
+            for topic, items in grouped.items():
+                content.append(f"### {topic}")
+                for s in sorted(items, key=lambda x: (x.relevance_score, x.urgency_score), reverse=True)[:max_items]:
+                    top_dims = ", ".join(
+                        f"{k}:{v}" for k, v in sorted(s.dimension_scores.items(), key=lambda x: x[1], reverse=True)[:2] if v > 0
+                    ) or "n/a"
+                    content.append(
+                        f"- **{s.title}** — {s.summary}  \\\n  Source: {domain_of(s.source)} | Published: {s.published or 'n/a'} | "
+                        f"Scores: R{s.relevance_score}/U{s.urgency_score} | Dims: {top_dims} | Link: {s.link}"
+                    )
+                content.append("")
 
         content.append("## Quantifiable Key Indicators")
         content.append("")
@@ -318,7 +452,49 @@ class ResearchAgent:
         suffix = "urgent" if report_type == "urgent" else "regular"
         out_path = self.output_dir / f"{suffix}_report_{ts}.md"
         out_path.write_text("\n".join(content) + "\n", encoding="utf-8")
+        self._write_report_json(
+            now=now,
+            report_type=report_type,
+            path_base=self.output_dir / f"{suffix}_report_{ts}",
+            grouped=grouped,
+            top_operational=top_operational,
+            top_tactical=top_tactical,
+            top_strategic=top_strategic,
+            recommendations=recommendations,
+            kpi_rows=kpi_rows,
+            changed_summary=changed_summary,
+        )
         return str(out_path)
+
+    def _write_report_json(
+        self,
+        now: dt.datetime,
+        report_type: str,
+        path_base: Path,
+        grouped: dict[str, list[Signal]],
+        top_operational: list[Signal],
+        top_tactical: list[Signal],
+        top_strategic: list[Signal],
+        recommendations: list[dict[str, str]],
+        kpi_rows: list[dict[str, str]],
+        changed_summary: dict[str, int],
+    ) -> None:
+        payload = {
+            "organization": self.config["organization"],
+            "role": self.config["role"],
+            "generated_utc": now.isoformat(),
+            "report_type": report_type,
+            "changed_summary": changed_summary,
+            "priority": {
+                "operational": [signal_to_dict(s) for s in top_operational],
+                "tactical": [signal_to_dict(s) for s in top_tactical],
+                "strategic": [signal_to_dict(s) for s in top_strategic],
+            },
+            "recommendations": recommendations,
+            "topics": {topic: [signal_to_dict(s) for s in items] for topic, items in grouped.items()},
+            "kpis": kpi_rows,
+        }
+        path_base.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _load_recent_signals(self, now: dt.datetime) -> list[Signal]:
         if not self.cache_path.exists():
@@ -335,7 +511,7 @@ class ResearchAgent:
                 published = parse_rss_date(raw.get("published", ""))
                 if published and published < cutoff:
                     continue
-                signals.append(Signal(**raw))
+                signals.append(Signal.from_dict(raw))
         return signals
 
 
@@ -474,6 +650,22 @@ def domain_of(url: str) -> str:
     return urllib.parse.urlparse(url).netloc
 
 
+def signal_to_dict(signal: Signal) -> dict[str, Any]:
+    return {
+        "id": signal.id,
+        "title": signal.title,
+        "link": signal.link,
+        "published": signal.published,
+        "source": signal.source,
+        "summary": signal.summary,
+        "topics": signal.topics,
+        "relevance_score": signal.relevance_score,
+        "urgency_score": signal.urgency_score,
+        "dimension_scores": signal.dimension_scores,
+        "rationale": signal.rationale,
+    }
+
+
 def fetch_stock_price_stooq(symbol: str) -> tuple[str, str]:
     url = f"https://stooq.com/q/l/?s={urllib.parse.quote(symbol.lower())}&f=sd2t2ohlcv&h&e=csv"
     try:
@@ -494,7 +686,7 @@ def fetch_stock_price_stooq(symbol: str) -> tuple[str, str]:
         return "n/a", "n/a"
 
 
-def build_kpi_rows(config: dict[str, Any]) -> list[dict[str, str]]:
+def build_kpi_rows(config: dict[str, Any], signals: list[Signal], now: dt.datetime) -> list[dict[str, str]]:
     rows = []
     for ticker in config.get("kpi", {}).get("stocks", []):
         value, change = fetch_stock_price_stooq(ticker)
@@ -506,7 +698,107 @@ def build_kpi_rows(config: dict[str, Any]) -> list[dict[str, str]]:
                 "notes": "Daily close and open-change (Stooq)",
             }
         )
+    windows = summarize_change_windows(signals, now)
+    rows.extend(
+        [
+            {
+                "indicator": "Signal volume (7d)",
+                "value": str(windows["recent"]),
+                "change": f"{windows['delta']:+}",
+                "notes": "Count of captured relevant signals in last 7 days",
+            },
+            {
+                "indicator": "Urgent signals (7d)",
+                "value": str(count_urgent(signals, now, 7)),
+                "change": "n/a",
+                "notes": "Signals with urgency >= configured urgent threshold",
+            },
+            {
+                "indicator": "Talent/workforce signals (7d)",
+                "value": str(count_topic(signals, now, 7, "Talent & Workforce")),
+                "change": "n/a",
+                "notes": "Signals classified under workforce/talent",
+            },
+            {
+                "indicator": "AEC industry signals (7d)",
+                "value": str(count_topic(signals, now, 7, "AECOM / AEC Industry")),
+                "change": "n/a",
+                "notes": "Signals classified under AEC industry impact",
+            },
+        ]
+    )
     return rows
+
+
+def signal_time(signal: Signal) -> dt.datetime | None:
+    return parse_rss_date(signal.published)
+
+
+def summarize_change_windows(signals: list[Signal], now: dt.datetime) -> dict[str, int]:
+    recent_start = now - dt.timedelta(days=7)
+    previous_start = now - dt.timedelta(days=14)
+    recent = 0
+    previous = 0
+    for s in signals:
+        ts = signal_time(s)
+        if ts is None:
+            continue
+        if recent_start <= ts <= now:
+            recent += 1
+        elif previous_start <= ts < recent_start:
+            previous += 1
+    return {"recent": recent, "previous": previous, "delta": recent - previous}
+
+
+def count_urgent(signals: list[Signal], now: dt.datetime, days: int) -> int:
+    cutoff = now - dt.timedelta(days=days)
+    return sum(1 for s in signals if s.urgency_score >= 80 and (signal_time(s) or now) >= cutoff)
+
+
+def count_topic(signals: list[Signal], now: dt.datetime, days: int, topic: str) -> int:
+    cutoff = now - dt.timedelta(days=days)
+    return sum(1 for s in signals if topic in s.topics and (signal_time(s) or now) >= cutoff)
+
+
+def build_recommendations(top_operational: list[Signal], top_tactical: list[Signal]) -> list[dict[str, str]]:
+    recommendations: list[dict[str, str]] = []
+    if top_operational:
+        highest = top_operational[0]
+        recommendations.append(
+            {
+                "decision": "Review immediate operational exposure",
+                "reason": f"Top urgent signal: {highest.title[:90]}",
+                "owner": "Ops AI leadership",
+                "horizon": "0-30 days",
+            }
+        )
+    if top_tactical:
+        recommendations.append(
+            {
+                "decision": "Prioritize one automation initiative for next quarter",
+                "reason": f"{len(top_tactical)} tactical signals suggest process/tech shifts",
+                "owner": "Delivery team leads",
+                "horizon": "30-180 days",
+            }
+        )
+    if not recommendations:
+        recommendations.append(
+            {
+                "decision": "Expand monitoring coverage",
+                "reason": "No strong external signals captured; increase source breadth and validate feed access",
+                "owner": "Research ops",
+                "horizon": "This week",
+            }
+        )
+    recommendations.append(
+        {
+            "decision": "Validate talent plan alignment",
+            "reason": "Track whether workforce-related signals are increasing versus prior week",
+            "owner": "People + AI leadership",
+            "horizon": "This month",
+        }
+    )
+    return recommendations[:5]
 
 
 def run_loop(agent: ResearchAgent) -> None:

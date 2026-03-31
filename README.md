@@ -11,15 +11,19 @@ A configurable local agent that continuously scans web/RSS signals and produces 
 - Produces reports on a separate configurable interval (e.g., weekly).
 - Triggers an **urgent report** immediately when high-urgency signals appear.
 - Groups findings by topic (AI, AEC industry, operations/back office, supply chain, talent, leadership).
+- Scores relevance across weighted decision dimensions (industry impact, autonomization, delivery impact, talent, risk).
 - Adds priority bullets for **operational, tactical, strategic** timeframes.
-- Includes a table of quantifiable KPIs (currently stock indicators; configurable).
+- Adds "what changed" trend deltas and recommended decisions/actions section.       
+- Includes a table of quantifiable KPIs (stocks + 7-day signal trend indicators).
 - Archives reports locally with file names indicating regular vs urgent report and date.
 
 ## Files
 
 - `research_agent.py` – main agent.
+- `dashboard.py` – lightweight local web dashboard for latest report JSON.
 - `config.json` – runtime configuration (auto-created on first run if missing).
 - `reports/` – output reports archive.
+- each report also emits a JSON sidecar (`*_report_YYYYMMDD.json`) used by the dashboard.
 - `agent_state.json` – scheduling/seen-items state.
 - `research_cache.jsonl` – cached collected signals.
 
@@ -38,6 +42,20 @@ Run continuously:
 
 ```bash
 python3 research_agent.py
+```
+
+Run local dashboard (after at least one report run):
+
+```bash
+python3 dashboard.py --reports-dir reports --port 8765
+```
+
+Then open `http://127.0.0.1:8765`.
+
+Export dashboard HTML without starting server:
+
+```bash
+python3 dashboard.py --reports-dir reports --export-html dashboard.html
 ```
 
 ## Configuration

@@ -88,6 +88,66 @@
     "rate hike",
     "export control"
   ],
+  "relevance_dimensions": {
+    "aec_industry_impact": {
+      "weight": 1.4,
+      "keywords": [
+        "infrastructure",
+        "engineering",
+        "construction",
+        "transportation",
+        "water",
+        "energy",
+        "public sector",
+        "federal funding"
+      ]
+    },
+    "enterprise_autonomization": {
+      "weight": 1.5,
+      "keywords": [
+        "agentic",
+        "automation",
+        "workflow",
+        "erp",
+        "back office",
+        "shared services",
+        "copilot"
+      ]
+    },
+    "delivery_process_impact": {
+      "weight": 1.2,
+      "keywords": [
+        "project delivery",
+        "productivity",
+        "quality",
+        "pm tool",
+        "software delivery",
+        "devops"
+      ]
+    },
+    "talent_and_workforce": {
+      "weight": 1.1,
+      "keywords": [
+        "hiring",
+        "recruitment",
+        "reskilling",
+        "layoff",
+        "labor",
+        "workforce"
+      ]
+    },
+    "leadership_and_risk": {
+      "weight": 1.1,
+      "keywords": [
+        "governance",
+        "compliance",
+        "regulation",
+        "risk",
+        "security",
+        "executive"
+      ]
+    }
+  },
   "kpi": {
     "stocks": [
       "ACM.US",
