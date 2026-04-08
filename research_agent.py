@@ -19,11 +19,7 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-
-from dataclasses import dataclass
-
 from dataclasses import dataclass, field
-=======
 from pathlib import Path
 from typing import Any
 
@@ -197,6 +193,7 @@ class Signal:
     urgency_score: int
     dimension_scores: dict[str, int] = field(default_factory=dict)
     rationale: list[str] = field(default_factory=list)
+    impact_headline: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Signal":
@@ -212,6 +209,7 @@ class Signal:
             urgency_score=int(raw.get("urgency_score", 0)),
             dimension_scores=raw.get("dimension_scores", {}) or {},
             rationale=raw.get("rationale", []) or [],
+            impact_headline=raw.get("impact_headline", ""),
         )
 
 
@@ -334,6 +332,7 @@ class ResearchAgent:
             urgency_score=min(urgency, 100),
             dimension_scores=dim_scores,
             rationale=rationale[:6],
+            impact_headline=impact_headline(title, dim_scores, urgency),
         )
 
     def _dimension_scores(self, text: str) -> dict[str, int]:
@@ -367,10 +366,10 @@ class ResearchAgent:
     def generate_report(self, now: dt.datetime, report_type: str) -> str:
         all_signals = self._load_recent_signals(now)
         grouped = group_by_topics(all_signals)
-
-        top_operational = sorted(all_signals, key=lambda x: x.urgency_score, reverse=True)[:5]
-        top_tactical = sorted(all_signals, key=lambda x: x.relevance_score, reverse=True)[:8]
-        top_strategic = strategic_candidates(all_signals)[:8]
+        assigned = assign_horizons(all_signals)
+        top_operational = assigned["operational"][:5]
+        top_tactical = assigned["tactical"][:8]
+        top_strategic = assigned["strategic"][:8]
 
         kpi_rows = build_kpi_rows(self.config, all_signals, now)
         changed_summary = summarize_change_windows(all_signals, now)
@@ -397,21 +396,30 @@ class ResearchAgent:
             content.append("- No high-urgency external signals were captured in the current window.")
         for s in top_operational:
             content.append(
-                f"- **{s.title}** (urgency {s.urgency_score}/100): {s.summary} [{s.link}]({s.link}) "
-                f"(why: {', '.join(s.rationale[:2]) or 'scored by relevance model'})"
+                f"- **{s.impact_headline}**\n"
+                f"  {s.summary}\n"
+                f"  [Read source article]({s.link})"
             )
         content.append("")
         content.append("### Tactical (30-180 days)")
         if not top_tactical:
             content.append("- No tactical-priority items were captured in this cycle.")
         for s in top_tactical:
-            content.append(f"- **{s.title}** (relevance {s.relevance_score}/100): {s.summary} [{s.link}]({s.link})")
+            content.append(
+                f"- **{s.impact_headline}**\n"
+                f"  {s.summary}\n"
+                f"  [Read source article]({s.link})"
+            )
         content.append("")
         content.append("### Strategic (6-24 months)")
         if not top_strategic:
             content.append("- No strategic horizon indicators were captured in this cycle.")
         for s in top_strategic:
-            content.append(f"- **{s.title}**: {s.summary} [{s.link}]({s.link})")
+            content.append(
+                f"- **{s.impact_headline}**\n"
+                f"  {s.summary}\n"
+                f"  [Read source article]({s.link})"
+            )
         content.append("")
         content.append("## Recommended decisions this week")
         content.append("")
@@ -663,7 +671,43 @@ def signal_to_dict(signal: Signal) -> dict[str, Any]:
         "urgency_score": signal.urgency_score,
         "dimension_scores": signal.dimension_scores,
         "rationale": signal.rationale,
+        "impact_headline": signal.impact_headline,
     }
+
+
+def impact_headline(title: str, dimension_scores: dict[str, int], urgency: int) -> str:
+    if not dimension_scores:
+        base = "This signal could influence your automation roadmap."
+    else:
+        top_dim = max(dimension_scores.items(), key=lambda x: x[1])[0]
+        mapping = {
+            "aec_industry_impact": "This signal may alter AECOM market and client demand assumptions.",
+            "enterprise_autonomization": "This signal may accelerate enterprise back-office autonomization priorities.",
+            "delivery_process_impact": "This signal may change how your delivery teams build and ship solutions.",
+            "talent_and_workforce": "This signal may impact hiring, staffing, or retention strategy.",
+            "leadership_and_risk": "This signal may require leadership attention to governance and risk posture.",
+        }
+        base = mapping.get(top_dim, "This signal could influence your operational AI priorities.")
+
+    if urgency >= 80:
+        return f"{base} Immediate review is recommended."
+    return base
+
+
+def assign_horizons(signals: list[Signal]) -> dict[str, list[Signal]]:
+    buckets: dict[str, list[Signal]] = {"operational": [], "tactical": [], "strategic": []}
+    for s in signals:
+        if s.urgency_score >= 80:
+            buckets["operational"].append(s)
+        elif s.relevance_score >= 65 or s.dimension_scores.get("enterprise_autonomization", 0) >= 8:
+            buckets["tactical"].append(s)
+        else:
+            buckets["strategic"].append(s)
+
+    buckets["operational"].sort(key=lambda x: x.urgency_score, reverse=True)
+    buckets["tactical"].sort(key=lambda x: x.relevance_score, reverse=True)
+    buckets["strategic"].sort(key=lambda x: x.relevance_score, reverse=True)
+    return buckets
 
 
 def fetch_stock_price_stooq(symbol: str) -> tuple[str, str]:

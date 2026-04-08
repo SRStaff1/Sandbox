@@ -13,7 +13,9 @@ A configurable local agent that continuously scans web/RSS signals and produces 
 - Groups findings by topic (AI, AEC industry, operations/back office, supply chain, talent, leadership).
 - Scores relevance across weighted decision dimensions (industry impact, autonomization, delivery impact, talent, risk).
 - Adds priority bullets for **operational, tactical, strategic** timeframes.
-- Adds "what changed" trend deltas and recommended decisions/actions section.       
+- Assigns each signal to exactly one timeframe bucket (operational, tactical, or strategic).
+- Presents each signal with a short \"why it matters\" headline, summary paragraph, and source link.
+- Adds "what changed" trend deltas and recommended decisions/actions section.
 - Includes a table of quantifiable KPIs (stocks + 7-day signal trend indicators).
 - Archives reports locally with file names indicating regular vs urgent report and date.
 

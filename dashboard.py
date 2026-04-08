@@ -41,9 +41,10 @@ def render_dashboard_html(data: dict[str, Any] | None) -> str:
         if not signals:
             return "<li>No items.</li>"
         return "".join(
-            f"<li><a href='{s.get('link','')}' target='_blank'>{s.get('title','(untitled)')}</a> "
+            f"<li><b>{s.get('impact_headline') or s.get('title','(untitled)')}</b> "
             f"<span class='pill'>{score_name}: {s.get(score_name, 0)}</span><br>"
-            f"<small>{s.get('summary','')}</small></li>"
+            f"<small>{s.get('summary','')}</small><br>"
+            f"<a href='{s.get('link','')}' target='_blank'>Read source article</a></li>"
             for s in signals
         )
 
